@@ -1,0 +1,5 @@
+# Verification reports are generated per-run and may quote unpublished paper content
+verify-reports/
+# Never commit secrets
+*.env
+openrouter.env
