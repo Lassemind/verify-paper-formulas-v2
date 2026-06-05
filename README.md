@@ -49,6 +49,7 @@ verify-paper-formulas/
 * `git`, `curl`, `jq`
 * An OpenRouter API key as `OPENROUTER_API_KEY`. The scripts resolve it from the
   first available source, in order:
+
   1. `$OPENROUTER_ENV` — a path you point at an env file
   2. an already-exported `OPENROUTER_API_KEY` in your shell
   3. a local `.env` in this skill folder (copy `.env.example` → `.env`)
