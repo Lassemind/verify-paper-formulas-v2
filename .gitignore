@@ -3,3 +3,7 @@ verify-reports/
 # Never commit secrets
 *.env
 openrouter.env
+
+# Stray DB from local tooling
+ruvector.db
+*.db

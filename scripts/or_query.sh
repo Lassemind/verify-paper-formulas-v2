@@ -2,22 +2,31 @@
 # Single OpenRouter chat completion.
 # Usage: or_query.sh <model> <prompt-file>
 # Reads the prompt body from <prompt-file> (so prompts with quotes/newlines are safe).
-# Prints JSON: {"model": "<served model>", "ok": true|false, "content": "...", "error": "..."}
-# The API key is read from ~/.config/openrouter.env and NEVER printed.
+# Prints JSON: {"ok": true|false, "requested": "...", "model": "<served model>", "content": "...", "error": "..."}
+# The API key is resolved from the first available source (see below) and NEVER printed.
 
 set -euo pipefail
 
 MODEL="${1:?usage: or_query.sh <model> <prompt-file>}"
 PROMPT_FILE="${2:?usage: or_query.sh <model> <prompt-file>}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HERE/.." && pwd)"
 
-ENV_FILE="${OPENROUTER_ENV:-$HOME/.config/openrouter.env}"
-if [ -f "$ENV_FILE" ]; then
+# Resolve OPENROUTER_API_KEY from the first source that has it:
+#   1. $OPENROUTER_ENV          — explicit env-file path, if set
+#   2. already-exported env var — e.g. set in the current shell
+#   3. <repo>/.env             — local file next to the skill (for cloners)
+#   4. ~/.config/openrouter.env — user-wide config
+# The repo .env is git-ignored, so it never gets committed.
+for f in "${OPENROUTER_ENV:-}" "$REPO_ROOT/.env" "$HOME/.config/openrouter.env"; do
+  [ -n "$f" ] && [ -f "$f" ] || continue
   # shellcheck disable=SC1090
-  source "$ENV_FILE"
-fi
+  source "$f"
+  [ -n "${OPENROUTER_API_KEY:-}" ] && break
+done
 KEY="${OPENROUTER_API_KEY:-}"
 if [ -z "$KEY" ]; then
-  echo '{"ok":false,"error":"no OPENROUTER_API_KEY in env (~/.config/openrouter.env)"}'
+  echo '{"ok":false,"error":"no OPENROUTER_API_KEY found — set it in the environment, a local .env in the skill folder, or ~/.config/openrouter.env"}'
   exit 3
 fi
 

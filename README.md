@@ -19,9 +19,9 @@ Three phases:
 1. **Fetch & decompose** — clone the paper (Overleaf Git or a local path), read the
    `.tex`, and extract each appendix/section formula as a numbered *claim*.
 2. **Multi-model verification** — for every claim:
-   - *Round 1 (independent):* each model derives the quantity solo, blind to the
+   * *Round 1 (independent):* each model derives the quantity solo, blind to the
      paper's result and to the other models.
-   - *Round 2 (adversarial):* each model receives the paper's derivation plus the
+   * *Round 2 (adversarial):* each model receives the paper's derivation plus the
      other models' derivations and actively tries to **refute** it.
 3. **Synthesis** — the answers are merged into a per-claim verdict
    (✅ confirmed / ⚠️ disagreement / ❌ error found) with the exact discrepancy.
@@ -45,17 +45,23 @@ verify-paper-formulas/
 
 ## Requirements
 
-- Claude Code
-- `git`, `curl`, `jq`
-- An OpenRouter API key exported as `OPENROUTER_API_KEY`
-  (the scripts read `~/.config/openrouter.env`; the key is **never** written to
-  any report, log, or file)
+* Claude Code
+* `git`, `curl`, `jq`
+* An OpenRouter API key as `OPENROUTER_API_KEY`. The scripts resolve it from the
+  first available source, in order:
+  1. `$OPENROUTER_ENV` — a path you point at an env file
+  2. an already-exported `OPENROUTER_API_KEY` in your shell
+  3. a local `.env` in this skill folder (copy `.env.example` → `.env`)
+  4. `~/.config/openrouter.env`
+
+  The local `.env` is git-ignored, and the key is **never** written to any
+  report, log, or file. Most people will just copy `.env.example` to `.env`.
 
 ## Install
 
 Clone into your personal Claude Code skills directory:
 
-```bash
+```Shell
 git clone https://github.com/Lassemind/verify-paper-formulas.git \
   ~/.claude/skills/verify-paper-formulas
 ```
@@ -68,9 +74,9 @@ Then in Claude Code just ask it to verify a paper's formulas, or invoke the
 The mechanics were validated against the live model panel and two synthetic
 control cases:
 
-- a deliberately **wrong** derivation (kinetic energy stated as `m v²`, missing
+* a deliberately **wrong** derivation (kinetic energy stated as `m v²`, missing
   the ½) — all five models flagged a **DISCREPANCY**;
-- the **correct** derivation (`½ m v²`) — all five models returned **CONFIRMED**.
+* the **correct** derivation (`½ m v²`) — all five models returned **CONFIRMED**.
 
 ## License
 
