@@ -335,7 +335,13 @@ if [ -n "$NUMBERS_TXT" ]; then
   else
     RUN_JSON="$(bash "$HERE/run_python.sh" "$OUT_DIR/snippet.py")"
     if [ "$(printf '%s' "$RUN_JSON" | jq -r '.ok')" = "true" ]; then
-      COMPUTED="$(printf '%s' "$RUN_JSON" | jq -r '.stdout' | tr -d '[:space:]' | tail -c 40)"
+      # The numeric prompt asks the model to print ONLY the final value on the
+      # LAST line, but models often print debug lines too. Take the last NON-EMPTY
+      # line and trim it — not "strip all whitespace from the whole output and keep
+      # the last 40 chars", which mashed multi-line output into garbage.
+      COMPUTED="$(printf '%s' "$RUN_JSON" | jq -r '.stdout' \
+                  | awk 'NF{last=$0} END{print last}' \
+                  | tr -d '[:space:]')"
       REF="$(reference_value "$OUT_DIR/_numbers.txt")"
       REL="$(python3 -I -S -c "
 try:

@@ -146,5 +146,20 @@ tail -n +4 "$REPORT" > "$BODY" 2>/dev/null || : > "$BODY"
 { head -n 3 "$REPORT"; cat "$SUMTBL"; cat "$BODY"; } > "$REPORT.tmp" && mv "$REPORT.tmp" "$REPORT"
 
 echo "" >&2
-echo ">> done. assembled report: $REPORT" >&2
+echo ">> done. raw report: $REPORT" >&2
 echo ">> per-claim runs + raw JSONL under: $OUT_DIR/" >&2
+
+# --- optional pass 3: human-readable synthesis -------------------------------
+# When PAPER_TEX points at the paper source, turn the raw report into the final
+# 🔴/🟡/🟢 review with exact main.tex:<line> references. Failure here never loses
+# the raw report.
+if [ -n "${PAPER_TEX:-}" ]; then
+  if [ -f "$PAPER_TEX" ]; then
+    bash "$HERE/synthesize_report.sh" "$REPORT" "$PAPER_TEX" || \
+      echo ">> (synthesis step failed — raw report above is still valid)" >&2
+  else
+    echo ">> PAPER_TEX set but not found: $PAPER_TEX — skipping synthesis" >&2
+  fi
+else
+  echo ">> tip: set PAPER_TEX=/path/to/main.tex to also get the human-readable review" >&2
+fi

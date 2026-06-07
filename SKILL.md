@@ -82,25 +82,31 @@ Round-1 contents) and run `fan_out.sh` again. Each model ends with a line
 ... | jq -r 'select(.requested) | "\(.requested): \(.content)"'
 ```
 
-### Phase C — Synthesis
+### Phase C — Synthesis (scripted)
 
-You (Claude) read all model answers per claim and write the report. Determine the
-verdict from the verdicts + reasoning — not a blind majority; weigh whether the
-dissenting model found a *real* error or just made a mistake itself.
+The synthesis is no longer hand-written. After the batch assembles the raw report,
+run **`scripts/synthesize_report.sh <raw-report.md> <paper.tex>`**. It does one LLM
+pass (default Opus 4.8) over the raw per-model verdicts **plus the line-numbered
+`.tex`** and emits the final human-readable review next to the raw report as
+`<raw>-review.md`. `run_batch.sh` calls it automatically when `PAPER_TEX` is set.
 
 ## Report Format
 
-`run_claim.sh` already emits a deterministic `claim-report.md` per claim (verdict
-tables + an "N/M confirm" headline). Assemble the per-claim fragments into
-`<dir>/verify-reports/YYYY-MM-DD-<paper>.md` (do not commit it) and add, per claim,
-the one thing the script can't decide for you — the **synthesis line**:
+Two artefacts are produced, and **both are kept**:
 
-* **Claim** — formula/quantity + source location *(from the fragment)*
-* **Solo / adversarial verdicts** — per-model tables *(from the fragment)*
-* **Verdict** — ✅ confirmed / ⚠️ disagreement / ❌ error found, + confidence
-  *(your call — not a blind majority; weigh whether a dissenter found a* real *error)*
-* **Discrepancy note** — if any, the exact step/factor/sign that differs
-* For numeric claims: the computed value, the reference, and the relative error
+1. **Raw report** (`run_batch.sh`) — deterministic: a summary table + per-claim
+   verdict tables + "N/M confirm" headlines + the Python ground-truth rows. This is
+   the audit trail; it is exact but machine-style.
+2. **Human review** (`synthesize_report.sh`) — the deliverable. For a reader who
+   has never seen the tool: every formula bucketed 🔴 **error** / 🟡 **result OK but
+   derivation flawed** / 🟢 **confirmed**, ordered as they appear in the paper, each
+   with a plain-language "what's wrong / why it matters / what to fix" and the exact
+   **`main.tex:<line>`** location. No internal claim IDs (N1, C2, …) in the prose.
+
+Write both to `<dir>/verify-reports/YYYY-MM-DD-<paper>.md` (raw) and
+`…-review.md` (human). Do not commit them. The bucket call is the model's reasoned
+judgement — **not** a blind majority; a single mislabelled step makes "N/5" read 0/5
+even when the final result is correct, which is exactly the 🟡 case.
 
 ## Error Handling
 
@@ -124,6 +130,11 @@ the one thing the script can't decide for you — the **synthesis line**:
   `claim-report.md`. Honours `CLAIM_ID` / `CLAIM_TITLE` for the heading and an
   optional `=== NUMBERS ===` section for numeric checks. Round 3 fires only on a
   real split (≥1 confirm AND ≥1 dissent in Round 2); the headline then uses Round 3.
+* `scripts/synthesize_report.sh <raw-report.md> <paper.tex> [out.md]` — one LLM pass
+  (`$SYNTH_MODEL`, default Opus 4.8) over the raw verdicts + the line-numbered `.tex`
+  → the final human-readable review (`<raw>-review.md`): 🔴/🟡/🟢 buckets, paper-order,
+  plain language, exact `main.tex:<line>` refs. Read-only on the paper; on failure the
+  raw report is kept and a clear message is printed.
 * `scripts/run_python.sh <snippet-file>` — runs a model-written formula snippet in
   a locked-down sandbox (token blocklist → only `import math`/`cmath`; `python3 -I -S`;
   10 s timeout; throwaway cwd) → JSON `{ok, stdout | reason, error}`. Used for the
@@ -149,6 +160,9 @@ All optional; defaults keep the cheap, fast behaviour.
 | `OR_RETRY_TIMEOUT` | `OR_TIMEOUT/2` | Shorter cap for the empty-content retry, so a stalled reasoning model doesn't burn a second full timeout. |
 | `VPF_MODELS` | _(unset)_ | Comma/space-separated model set, overriding the 5-model default without editing `fan_out.sh`. Drop a slow/empty model for a whole run by leaving it out. |
 | `GROUND_TRUTH_MODEL` | `anthropic/claude-opus-4.8` | Model that writes the numeric-check Python snippet. |
+| `PAPER_TEX` | _(unset)_ | Path to the paper `.tex`. When set, `run_batch.sh` auto-runs `synthesize_report.sh` after assembly to produce the human review. |
+| `SYNTH_MODEL` | `anthropic/claude-opus-4.8` | Model that writes the final human-readable review. |
+| `SYNTH_MAX_TOKENS` | `16384` | Completion cap for the synthesis pass (the review is long). |
 
 ```
 # fast default
