@@ -1,0 +1,8 @@
+# These files contain exact tokens the shell scripts match on — a Markdown
+# formatter MUST NOT touch them. Reformatting has previously broken the skill:
+#   - SKILL.md YAML frontmatter `---` rewritten to `***` (invalid frontmatter)
+#   - `{{OTHER_DERIVATIONS}}` -> `{{OTHER\_DERIVATIONS}}` (fill() awk match fails)
+#   - ```python -> ```Python (extract_python() match fails, numeric mode breaks)
+SKILL.md
+prompts/
+README.md

@@ -44,6 +44,10 @@ claims were checked with real Python; the paper was never modified.>
 
 **How to read the verdicts:** <a small table defining 🔴 / 🟡 / 🟢 as above.>
 
+> *Rendering note:* formulas are LaTeX (`$…$`) and render on GitHub and in any
+> Markdown preview with math support (in VS Code, `Cmd+Shift+V`). The
+> `main.tex:<line>` references point at the exact line in the paper source.
+
 ---
 
 ## ⚠️ Things to fix (in the order they appear in the paper)

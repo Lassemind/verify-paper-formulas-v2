@@ -64,3 +64,16 @@ fi
 
 printf '%s\n' "$CONTENT" > "$OUT"
 echo ">> done. human-readable review: $OUT" >&2
+
+# At-a-glance console summary so the finding is visible without opening the file.
+# Count only the per-item SECTION HEADINGS (### 🔴/🟡), not every emoji occurrence
+# (the legend table and the confirmed table would otherwise inflate the counts).
+RED="$(grep -cE '^###[[:space:]]*🔴' "$OUT" 2>/dev/null || echo 0)"
+YEL="$(grep -cE '^###[[:space:]]*🟡' "$OUT" 2>/dev/null || echo 0)"
+# 🟢 items live as rows in the "confirmed" table, one trailing 🟢 per row.
+GRN="$(grep -cE '🟢[[:space:]]*\|?[[:space:]]*$' "$OUT" 2>/dev/null || echo 0)"
+{
+  echo ""
+  echo ">> review summary:  🔴 $RED error(s)   🟡 $YEL result-OK/derivation-flawed   🟢 ~$GRN confirmed"
+  grep -E '^###[[:space:]]*(🔴|🟡)' "$OUT" 2>/dev/null | sed 's/^###[[:space:]]*/   - /'
+} >&2
