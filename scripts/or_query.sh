@@ -44,6 +44,13 @@ MAX_TOKENS="${OR_MAX_TOKENS:-8192}"
 # self-consistency sampling, where some variance between runs is the whole point.
 TEMP="${OR_TEMP:-0.2}"
 
+# Per-call wall-clock cap (seconds). The empty-content retry uses a SHORTER cap
+# (OR_RETRY_TIMEOUT, default = half) so a reasoning model that burned its budget
+# and returned nothing doesn't cost a second full timeout before we give up.
+TIMEOUT="${OR_TIMEOUT:-240}"
+RETRY_TIMEOUT="${OR_RETRY_TIMEOUT:-$((TIMEOUT / 2))}"
+CURL_TIMEOUT="$TIMEOUT"   # do_call reads this; lowered before the empty-retry
+
 # Build the request body with jq so the prompt is correctly JSON-escaped.
 BODY="$(jq -n --arg model "$MODEL" --rawfile prompt "$PROMPT_FILE" \
   --argjson maxtok "$MAX_TOKENS" --argjson temp "$TEMP" \
@@ -57,7 +64,7 @@ HTTP_CODE=000
 do_call() {
   local raw resp
   # append the status code on its own trailing line, then split it off
-  raw="$(curl -sS --max-time 240 -w '\n%{http_code}' \
+  raw="$(curl -sS --max-time "$CURL_TIMEOUT" -w '\n%{http_code}' \
     https://openrouter.ai/api/v1/chat/completions \
     -H "Authorization: Bearer $KEY" \
     -H "Content-Type: application/json" \
@@ -97,6 +104,7 @@ OUT="$(call_with_backoff)"
 CONTENT_LEN="$(printf '%s' "$OUT" | jq -r '(.content // "") | length' 2>/dev/null || echo 0)"
 OK_FLAG="$(printf '%s' "$OUT" | jq -r '.ok // false' 2>/dev/null || echo false)"
 if [ "$OK_FLAG" = "true" ] && [ "${CONTENT_LEN:-0}" -eq 0 ]; then
+  CURL_TIMEOUT="$RETRY_TIMEOUT"   # the model already stalled once — don't wait the full cap again
   OUT="$(call_with_backoff)"
 fi
 

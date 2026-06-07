@@ -130,9 +130,9 @@ the one thing the script can't decide for you — the **synthesis line**:
   numeric ground-truth.
 * `scripts/or_query.sh <model> <prompt-file>` — one OpenRouter call → JSON
   `{ok, requested, model, content|error}`. `OR_MAX_TOKENS` (8192), `OR_TEMP` (0.2),
-  HTTP 429/5xx backoff, one empty-content retry.
+  HTTP 429/5xx backoff, one empty-content retry (on a shorter timeout).
 * `scripts/fan_out.sh <prompt-file> [models...]` — runs all models in parallel,
-  emits JSONL. Defaults to the 5-model set; pass model IDs to override.
+  emits JSONL. Model set: CLI args > `$VPF_MODELS` > built-in 5-model default.
 
 ## Tuning (env vars)
 
@@ -145,6 +145,9 @@ All optional; defaults keep the cheap, fast behaviour.
 | `OR_DIGEST_CHARS` | `4000` | Max chars of each Round-1 derivation passed into Round 2. |
 | `OR_MAX_TOKENS` | `8192` | Per-call completion cap. |
 | `OR_TEMP` | `0.2` | Sampling temperature (raised to 0.5 automatically during `N_SAMPLES` runs). |
+| `OR_TIMEOUT` | `240` | Per-call wall-clock cap (seconds). |
+| `OR_RETRY_TIMEOUT` | `OR_TIMEOUT/2` | Shorter cap for the empty-content retry, so a stalled reasoning model doesn't burn a second full timeout. |
+| `VPF_MODELS` | _(unset)_ | Comma/space-separated model set, overriding the 5-model default without editing `fan_out.sh`. Drop a slow/empty model for a whole run by leaving it out. |
 | `GROUND_TRUTH_MODEL` | `anthropic/claude-opus-4.8` | Model that writes the numeric-check Python snippet. |
 
 ```
@@ -152,6 +155,8 @@ All optional; defaults keep the cheap, fast behaviour.
 run_batch.sh ~/claims
 # high-confidence: 3-sample self-consistency, Round 3 auto on splits, Python on NUMBERS
 N_SAMPLES=3 run_batch.sh ~/claims
+# drop a slow/empty model (e.g. deepseek) for the whole run — no file edits
+VPF_MODELS="anthropic/claude-opus-4.8,openai/gpt-5.5,google/gemini-3.1-pro-preview,x-ai/grok-4.3" run_batch.sh ~/claims
 ```
 
 ## Notes
