@@ -38,6 +38,14 @@ Markdown review report. **The paper is never modified.**
 2. Read the `.tex` files. Extract each formula/derivation from the appendices and
    formula sections as a **numbered list of claims**. Show this list to the user
    and confirm scope before spending API tokens.
+3. **Record the paper path now, while you know it.** The whole point of Phase A is
+   that you have the paper open — so write its main `.tex` path into the claims
+   directory so the synthesis step doesn't have to guess later:
+   ```
+   echo /abs/path/to/main.tex > <claims-dir>/.paper_path
+   ```
+   `run_batch.sh` reads this first (before any auto-detection). This is what makes
+   the human review reliably appear even when the claims live far from the paper.
 
 For each claim record: an ID + source (`Appendix A, Eq. (A.3)`), the claim text,
 and the surrounding definitions/symbols (the **context**).

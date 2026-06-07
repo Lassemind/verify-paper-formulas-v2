@@ -155,12 +155,24 @@ echo ">> per-claim runs + raw JSONL under: $OUT_DIR/" >&2
 # locate it automatically so the review is produced without any extra flag.
 # Failure here never loses the raw report.
 
-# detect_paper_tex: echo a best-guess path to the paper .tex, or nothing.
-# Search order: explicit $PAPER_TEX → main.tex in $PWD or the report's repo →
+# detect_paper_tex: echo the path to the paper .tex, or nothing.
+# Search order: explicit $PAPER_TEX → a `.paper_path` recorded next to the claims
+# (the location is known from the very start, when the claims were extracted from
+# the paper — write it there in Phase A) → main.tex in $PWD or the report's repo →
 # a *single* obvious .tex there. Never guesses when it would be ambiguous.
 detect_paper_tex() {
   # 1. explicit override always wins
   if [ -n "${PAPER_TEX:-}" ]; then printf '%s' "$PAPER_TEX"; return; fi
+
+  # 1a. the path recorded at decomposition time, alongside the claims. This is the
+  #     authoritative source: the paper's location is known from the start, so
+  #     Phase A can drop it in `<claims-dir>/.paper_path` and it survives even when
+  #     the claims live far from the paper (e.g. claims in /tmp, paper in a repo).
+  local pp="$CLAIMS_DIR/.paper_path"
+  if [ -f "$pp" ]; then
+    local recorded; recorded="$(head -n1 "$pp" | tr -d '[:space:]')"
+    [ -n "$recorded" ] && [ -f "$recorded" ] && { printf '%s' "$recorded"; return; }
+  fi
 
   # candidate roots: where the user invoked us, and the report's own directory
   local report_dir; report_dir="$(cd "$(dirname "$REPORT")" 2>/dev/null && pwd)"
