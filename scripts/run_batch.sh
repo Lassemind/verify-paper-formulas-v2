@@ -149,17 +149,55 @@ echo "" >&2
 echo ">> done. raw report: $REPORT" >&2
 echo ">> per-claim runs + raw JSONL under: $OUT_DIR/" >&2
 
-# --- optional pass 3: human-readable synthesis -------------------------------
-# When PAPER_TEX points at the paper source, turn the raw report into the final
-# 🔴/🟡/🟢 review with exact main.tex:<line> references. Failure here never loses
-# the raw report.
-if [ -n "${PAPER_TEX:-}" ]; then
-  if [ -f "$PAPER_TEX" ]; then
-    bash "$HERE/synthesize_report.sh" "$REPORT" "$PAPER_TEX" || \
-      echo ">> (synthesis step failed — raw report above is still valid)" >&2
-  else
-    echo ">> PAPER_TEX set but not found: $PAPER_TEX — skipping synthesis" >&2
+# --- pass 3: human-readable synthesis ----------------------------------------
+# Turn the raw report into the final 🔴/🟡/🟢 review with exact main.tex:<line>
+# references. The paper .tex is taken from $PAPER_TEX if set, otherwise we try to
+# locate it automatically so the review is produced without any extra flag.
+# Failure here never loses the raw report.
+
+# detect_paper_tex: echo a best-guess path to the paper .tex, or nothing.
+# Search order: explicit $PAPER_TEX → main.tex in $PWD or the report's repo →
+# a *single* obvious .tex there. Never guesses when it would be ambiguous.
+detect_paper_tex() {
+  # 1. explicit override always wins
+  if [ -n "${PAPER_TEX:-}" ]; then printf '%s' "$PAPER_TEX"; return; fi
+
+  # candidate roots: where the user invoked us, and the report's own directory
+  local report_dir; report_dir="$(cd "$(dirname "$REPORT")" 2>/dev/null && pwd)"
+  local roots=("$PWD" "$report_dir" "$report_dir/.." )
+
+  # 1b. a conventional main.tex in any candidate root
+  local r
+  for r in "${roots[@]}"; do
+    [ -n "$r" ] && [ -f "$r/main.tex" ] && { printf '%s' "$r/main.tex"; return; }
+  done
+
+  # 2. exactly one .tex in $PWD → take it; if several, pick the largest ONLY when
+  #    it is clearly the biggest (>1.5x the runner-up), else stay silent.
+  local texs=()
+  shopt -s nullglob; texs=("$PWD"/*.tex); shopt -u nullglob
+  if [ "${#texs[@]}" -eq 1 ]; then printf '%s' "${texs[0]}"; return; fi
+  if [ "${#texs[@]}" -gt 1 ]; then
+    local big big_sz second_sz t sz
+    big=""; big_sz=0; second_sz=0
+    for t in "${texs[@]}"; do
+      sz="$(wc -c < "$t" 2>/dev/null | tr -d ' ')"; sz="${sz:-0}"
+      if [ "$sz" -gt "$big_sz" ]; then second_sz="$big_sz"; big_sz="$sz"; big="$t"
+      elif [ "$sz" -gt "$second_sz" ]; then second_sz="$sz"; fi
+    done
+    # clearly-largest test: big > 1.5 * runner-up
+    if [ "$big_sz" -gt "$(( second_sz * 3 / 2 ))" ]; then printf '%s' "$big"; return; fi
   fi
+  # ambiguous or none → echo nothing
+}
+
+TEX_PATH="$(detect_paper_tex)"
+if [ -n "$TEX_PATH" ] && [ -f "$TEX_PATH" ]; then
+  [ -n "${PAPER_TEX:-}" ] || echo ">> auto-detected paper: $TEX_PATH (override with PAPER_TEX=...)" >&2
+  bash "$HERE/synthesize_report.sh" "$REPORT" "$TEX_PATH" || \
+    echo ">> (synthesis step failed — raw report above is still valid)" >&2
+elif [ -n "${PAPER_TEX:-}" ]; then
+  echo ">> PAPER_TEX set but not found: $PAPER_TEX — skipping synthesis" >&2
 else
-  echo ">> tip: set PAPER_TEX=/path/to/main.tex to also get the human-readable review" >&2
+  echo ">> no paper .tex found automatically — set PAPER_TEX=/path/to/main.tex for the human review" >&2
 fi

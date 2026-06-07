@@ -88,7 +88,10 @@ The synthesis is no longer hand-written. After the batch assembles the raw repor
 run **`scripts/synthesize_report.sh <raw-report.md> <paper.tex>`**. It does one LLM
 pass (default Opus 4.8) over the raw per-model verdicts **plus the line-numbered
 `.tex`** and emits the final human-readable review next to the raw report as
-`<raw>-review.md`. `run_batch.sh` calls it automatically when `PAPER_TEX` is set.
+`<raw>-review.md`. `run_batch.sh` runs it automatically: it auto-detects the paper
+`.tex` (a `main.tex` in the working dir / report repo, or a single/clearly-largest
+`.tex`), so the review is produced with no extra flag. Set `PAPER_TEX` only to
+override or when the paper can't be found automatically.
 
 ## Report Format
 
@@ -160,7 +163,7 @@ All optional; defaults keep the cheap, fast behaviour.
 | `OR_RETRY_TIMEOUT` | `OR_TIMEOUT/2` | Shorter cap for the empty-content retry, so a stalled reasoning model doesn't burn a second full timeout. |
 | `VPF_MODELS` | _(unset)_ | Comma/space-separated model set, overriding the 5-model default without editing `fan_out.sh`. Drop a slow/empty model for a whole run by leaving it out. |
 | `GROUND_TRUTH_MODEL` | `anthropic/claude-opus-4.8` | Model that writes the numeric-check Python snippet. |
-| `PAPER_TEX` | _(unset)_ | Path to the paper `.tex`. When set, `run_batch.sh` auto-runs `synthesize_report.sh` after assembly to produce the human review. |
+| `PAPER_TEX` | _(auto-detected)_ | Path to the paper `.tex`. `run_batch.sh` finds `main.tex` (or a single/clearly-largest `.tex`) on its own; set this only to override or if detection fails. |
 | `SYNTH_MODEL` | `anthropic/claude-opus-4.8` | Model that writes the final human-readable review. |
 | `SYNTH_MAX_TOKENS` | `16384` | Completion cap for the synthesis pass (the review is long). |
 
