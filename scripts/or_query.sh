@@ -40,10 +40,14 @@ fi
 # max_tokens defaults to 8192 (long physics derivations were truncated at 4096,
 # cutting off the final VERDICT line). Override via OR_MAX_TOKENS.
 MAX_TOKENS="${OR_MAX_TOKENS:-8192}"
+# Default temperature 0.2 (verification, not ideation). Raised by the caller for
+# self-consistency sampling, where some variance between runs is the whole point.
+TEMP="${OR_TEMP:-0.2}"
 
 # Build the request body with jq so the prompt is correctly JSON-escaped.
-BODY="$(jq -n --arg model "$MODEL" --rawfile prompt "$PROMPT_FILE" --argjson maxtok "$MAX_TOKENS" \
-  '{model:$model, messages:[{role:"user", content:$prompt}], max_tokens:$maxtok, temperature:0.2}')"
+BODY="$(jq -n --arg model "$MODEL" --rawfile prompt "$PROMPT_FILE" \
+  --argjson maxtok "$MAX_TOKENS" --argjson temp "$TEMP" \
+  '{model:$model, messages:[{role:"user", content:$prompt}], max_tokens:$maxtok, temperature:$temp}')"
 
 # One call → parsed JSON line on stdout. Returns nonzero only on transport failure.
 # The HTTP status code is captured separately (curl -w) and exposed via the global

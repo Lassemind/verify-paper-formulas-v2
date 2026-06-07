@@ -119,17 +119,44 @@ the one thing the script can't decide for you — the **synthesis line**:
   ID `B1`, title "ideal solenoid"); a `# Title: ...` first line overrides. A
   failing claim is marked `FAILED` and does not abort the batch. Use this so the
   orchestration never has to be hand-written.
-* `scripts/run_claim.sh <claim-file> [out-dir]` — **single-claim driver**: both
-  rounds for one claim + a `claim-report.md`. Honours `CLAIM_ID` / `CLAIM_TITLE`
-  env vars for the heading and an optional `=== NUMBERS ===` section for numeric checks.
+* `scripts/run_claim.sh <claim-file> [out-dir]` — **single-claim driver**: runs
+  Round 1 (derive) → Round 2 (refute) → optional Round 3 (resolve), writes a
+  `claim-report.md`. Honours `CLAIM_ID` / `CLAIM_TITLE` for the heading and an
+  optional `=== NUMBERS ===` section for numeric checks. Round 3 fires only on a
+  real split (≥1 confirm AND ≥1 dissent in Round 2); the headline then uses Round 3.
+* `scripts/run_python.sh <snippet-file>` — runs a model-written formula snippet in
+  a locked-down sandbox (token blocklist → only `import math`/`cmath`; `python3 -I -S`;
+  10 s timeout; throwaway cwd) → JSON `{ok, stdout | reason, error}`. Used for the
+  numeric ground-truth.
 * `scripts/or_query.sh <model> <prompt-file>` — one OpenRouter call → JSON
-  `{ok, requested, model, content|error}`. `OR_MAX_TOKENS` overrides the 8192 cap;
-  retries once on empty content.
+  `{ok, requested, model, content|error}`. `OR_MAX_TOKENS` (8192), `OR_TEMP` (0.2),
+  HTTP 429/5xx backoff, one empty-content retry.
 * `scripts/fan_out.sh <prompt-file> [models...]` — runs all models in parallel,
   emits JSONL. Defaults to the 5-model set; pass model IDs to override.
 
+## Tuning (env vars)
+
+All optional; defaults keep the cheap, fast behaviour.
+
+| Var | Default | Effect |
+|-----|---------|--------|
+| `N_SAMPLES` | `1` | Self-consistency: derive each quantity N times (temp 0.5) in Round 1; per-model verdict = majority of N. Catches one-off slips. 3 is a good value. |
+| `MAX_PARALLEL` | `5` | `run_batch.sh`: claims run at once (×5 models = concurrent calls). |
+| `OR_DIGEST_CHARS` | `4000` | Max chars of each Round-1 derivation passed into Round 2. |
+| `OR_MAX_TOKENS` | `8192` | Per-call completion cap. |
+| `OR_TEMP` | `0.2` | Sampling temperature (raised to 0.5 automatically during `N_SAMPLES` runs). |
+| `GROUND_TRUTH_MODEL` | `anthropic/claude-opus-4.8` | Model that writes the numeric-check Python snippet. |
+
+```
+# fast default
+run_batch.sh ~/claims
+# high-confidence: 3-sample self-consistency, Round 3 auto on splits, Python on NUMBERS
+N_SAMPLES=3 run_batch.sh ~/claims
+```
+
 ## Notes
 
-Use a low temperature (the scripts set 0.2) — this is verification, not ideation.
-For long derivations, split into smaller claims so each fits comfortably in one
-prompt and the verdicts stay checkable.
+Default temperature is 0.2 (verification, not ideation); self-consistency runs use
+0.5 so the samples actually differ. For long derivations, split into smaller claims
+so each fits comfortably in one prompt and the verdicts stay checkable. In numeric
+mode, trust the **Python-computed** number over any model's mental arithmetic.

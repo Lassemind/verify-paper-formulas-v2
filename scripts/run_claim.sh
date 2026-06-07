@@ -115,6 +115,9 @@ verdict_table_md() {  # verdict_table_md <jsonl-file>
     fi
     v="$(printf '%s' "$line" | verdict_of)"
     r="$(printf '%s' "$line" | reason_of | tr '\n' ' ' | sed 's/|/\\|/g' | cut -c1-160)"
+    # show the self-consistency sample tally if present (e.g. "2/3")
+    smp="$(printf '%s' "$line" | jq -r '.samples // ""' 2>/dev/null)"
+    [ -n "$smp" ] && v="$v ($smp)"
     printf '| %s | %s | %s |\n' "$m" "$v" "$r" >> "$REPORT"
   done < "$1"
 }
@@ -128,6 +131,50 @@ count_verdict() {  # count_verdict <jsonl-file> <word>
     case "$v" in *"$(printf '%s' "$2" | tr 'A-Z' 'a-z')"*) n=$((n+1)) ;; esac
   done < "$1"
   printf '%s' "$n"
+}
+
+# Consolidate N sample rounds (one jsonl per sample) into a single jsonl with one
+# line per model: the majority verdict across that model's N runs, the content of
+# a representative majority run, and a "samples":"2/3" annotation. A tie picks
+# UNSURE (the safe verdict). Used for self-consistency (N_SAMPLES>1).
+consolidate_samples() {  # consolidate_samples <out-file> <sample1.jsonl> [sample2.jsonl ...]
+  local out="$1"; shift
+  python3 -I -S - "$out" "$@" <<'PY'
+import sys, json, re
+out_path, files = sys.argv[1], sys.argv[2:]
+def verdict(text):
+    if not text: return "NO-VERDICT"
+    lines = [l for l in text.splitlines() if re.search(r'VERDICT', l, re.I)]
+    if not lines: return "NO-VERDICT"
+    m = re.search(r'VERDICT:\s*<?\*?([A-Za-z]+)', lines[-1], re.I)
+    return m.group(1).upper() if m else "NO-VERDICT"
+runs = {}   # model -> list of (verdict, full_line_obj)
+for f in files:
+    try:
+        for line in open(f):
+            line = line.strip()
+            if not line: continue
+            o = json.loads(line)
+            m = o.get("requested")
+            if not m: continue
+            runs.setdefault(m, []).append((verdict(o.get("content","")), o))
+    except FileNotFoundError:
+        pass
+with open(out_path, "w") as w:
+    for m, lst in runs.items():
+        verds = [v for v,_ in lst]
+        # majority vote
+        counts = {}
+        for v in verds: counts[v] = counts.get(v,0)+1
+        top = max(counts.values())
+        winners = [v for v,c in counts.items() if c == top]
+        chosen = "UNSURE" if len(winners) > 1 else winners[0]
+        # representative object: first run whose verdict == chosen, else first run
+        rep = next((o for v,o in lst if v == chosen), lst[0][1])
+        rep = dict(rep)
+        rep["samples"] = f"{counts.get(chosen,0)}/{len(lst)}"
+        w.write(json.dumps(rep) + "\n")
+PY
 }
 
 # extract the first ```python ... ``` fenced block from a model answer
@@ -150,11 +197,29 @@ printf '%s\n' "$CLAIM_TXT"    > "$OUT_DIR/_claim.txt"
 printf '%s\n' "$CONTEXT_TXT"  > "$OUT_DIR/_context.txt"
 [ -n "$NUMBERS_TXT" ] && printf '%s\n' "$NUMBERS_TXT" > "$OUT_DIR/_numbers.txt"
 
-# --- Round 1: independent derivation ---------------------------------------
+# --- Round 1: independent derivation ----------------------------------------
+# Self-consistency: with N_SAMPLES>1, each model derives the quantity N times at
+# a higher temperature; the per-model verdict is the MAJORITY across its N runs.
+# This catches a model's occasional one-off slip. Default 1 = old behaviour.
 fill "$SKILL_ROOT/prompts/derive.md" CLAIM   "$OUT_DIR/_claim.txt"   "$OUT_DIR/_r1.tmp"
 fill "$OUT_DIR/_r1.tmp"              CONTEXT "$OUT_DIR/_context.txt" "$OUT_DIR/_r1.prompt"
-echo ">> Round 1 (independent derivation) ..." >&2
-bash "$HERE/fan_out.sh" "$OUT_DIR/_r1.prompt" > "$OUT_DIR/round1.jsonl"
+
+N_SAMPLES="${N_SAMPLES:-1}"
+if [ "$N_SAMPLES" -le 1 ]; then
+  echo ">> Round 1 (independent derivation) ..." >&2
+  bash "$HERE/fan_out.sh" "$OUT_DIR/_r1.prompt" > "$OUT_DIR/round1.jsonl"
+else
+  echo ">> Round 1 (self-consistency: $N_SAMPLES samples @ temp ${OR_TEMP:-0.5}) ..." >&2
+  sample_files=()
+  s=1
+  while [ "$s" -le "$N_SAMPLES" ]; do
+    OR_TEMP="${OR_TEMP:-0.5}" bash "$HERE/fan_out.sh" "$OUT_DIR/_r1.prompt" \
+      > "$OUT_DIR/round1.sample$s.jsonl"
+    sample_files+=("$OUT_DIR/round1.sample$s.jsonl")
+    s=$((s+1))
+  done
+  consolidate_samples "$OUT_DIR/round1.jsonl" "${sample_files[@]}"
+fi
 
 # --- digest of Round-1 derivations -----------------------------------------
 # Each derivation is kept up to OR_DIGEST_CHARS (default 4000) chars. The old
@@ -173,32 +238,81 @@ fill "$OUT_DIR/_r2b.tmp"             OTHER_DERIVATIONS "$OUT_DIR/_others.txt"  "
 echo ">> Round 2 (adversarial refutation) ..." >&2
 bash "$HERE/fan_out.sh" "$OUT_DIR/_r2.prompt" > "$OUT_DIR/round2.jsonl"
 
+# --- Round 3: resolve disagreement (only on a real split) -------------------
+# Trigger only when Round 2 is NOT unanimous: at least one model confirms AND at
+# least one dissents (REFUTED / DISCREPANCY). Unanimous rounds need no Round 3.
+R2_CONFIRM="$(count_verdict "$OUT_DIR/round2.jsonl" CONFIRM)"
+R2_REFUTE="$(count_verdict "$OUT_DIR/round2.jsonl" REFUTE)"
+R2_DISCREP="$(count_verdict "$OUT_DIR/round2.jsonl" DISCREP)"
+R2_DISSENT=$(( R2_REFUTE + R2_DISCREP ))
+RAN_ROUND3=0
+if [ "$R2_CONFIRM" -ge 1 ] && [ "$R2_DISSENT" -ge 1 ]; then
+  RAN_ROUND3=1
+  echo ">> split detected ($R2_CONFIRM confirm vs $R2_DISSENT dissent) — Round 3 ..." >&2
+  # the disagreement digest: the reason lines of the dissenting models
+  : > "$OUT_DIR/_disagreement.txt"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    v="$(printf '%s' "$line" | verdict_of | tr 'A-Z' 'a-z')"
+    case "$v" in
+      *refute*|*discrep*)
+        mname="$(printf '%s' "$line" | jq -r '.requested' | sed 's#/.*##')"
+        rsn="$(printf '%s' "$line" | reason_of | tr '\n' ' ')"
+        printf -- '- [%s] objects: %s\n' "$mname" "$rsn" >> "$OUT_DIR/_disagreement.txt" ;;
+    esac
+  done < "$OUT_DIR/round2.jsonl"
+  # full Round-2 reviews as context
+  jq -r --argjson n "$DIGEST_CHARS" 'select(.requested) |
+    "[\(.requested|sub("/.*";""))]: \((.content // "(no output)") | gsub("\n";" ") | .[0:$n])"' \
+    "$OUT_DIR/round2.jsonl" > "$OUT_DIR/_r2others.txt"
+
+  fill "$SKILL_ROOT/prompts/resolve.md" CLAIM            "$OUT_DIR/_claim.txt"        "$OUT_DIR/_r3a.tmp"
+  fill "$OUT_DIR/_r3a.tmp"              CONTEXT          "$OUT_DIR/_context.txt"      "$OUT_DIR/_r3b.tmp"
+  fill "$OUT_DIR/_r3b.tmp"              DISAGREEMENT     "$OUT_DIR/_disagreement.txt" "$OUT_DIR/_r3c.tmp"
+  fill "$OUT_DIR/_r3c.tmp"              OTHER_DERIVATIONS "$OUT_DIR/_r2others.txt"     "$OUT_DIR/_r3.prompt"
+  bash "$HERE/fan_out.sh" "$OUT_DIR/_r3.prompt" > "$OUT_DIR/round3.jsonl"
+fi
+
 # --- console tally ---------------------------------------------------------
 echo ""
 echo "=== Round 1 verdicts ==="
 print_verdicts "$OUT_DIR/round1.jsonl"
 echo "=== Round 2 verdicts (adversarial) ==="
 print_verdicts "$OUT_DIR/round2.jsonl"
+if [ "$RAN_ROUND3" -eq 1 ]; then
+  echo "=== Round 3 verdicts (resolution) ==="
+  print_verdicts "$OUT_DIR/round3.jsonl"
+fi
 
 # --- deterministic Markdown report fragment --------------------------------
 # Optional heading via env: CLAIM_ID (e.g. "B1"), CLAIM_TITLE (e.g. "Ideal solenoid L").
 REPORT="$OUT_DIR/claim-report.md"
 TITLE="${CLAIM_ID:+$CLAIM_ID — }${CLAIM_TITLE:-Claim}"
-N_MODELS="$(jq -rs 'length' "$OUT_DIR/round2.jsonl" 2>/dev/null || echo 0)"
-N_CONF="$(count_verdict "$OUT_DIR/round2.jsonl" CONFIRM)"
+# Headline uses the LAST decisive round: Round 3 if it ran, else Round 2.
+if [ "$RAN_ROUND3" -eq 1 ]; then
+  HEAD_SRC="$OUT_DIR/round3.jsonl"; HEAD_LABEL="Round 3 (resolution)"
+else
+  HEAD_SRC="$OUT_DIR/round2.jsonl"; HEAD_LABEL="Round 2 (adversarial)"
+fi
+N_MODELS="$(jq -rs 'length' "$HEAD_SRC" 2>/dev/null || echo 0)"
+N_CONF="$(count_verdict "$HEAD_SRC" CONFIRM)"
 
 {
   printf '## %s\n\n' "$TITLE"
   printf '**Claim**\n\n```\n'
   cat "$OUT_DIR/_claim.txt"
   printf '```\n'
-  printf '\n_Round 2 (adversarial): %s/%s models confirm._\n' "$N_CONF" "$N_MODELS"
+  printf '\n_%s: %s/%s models confirm._\n' "$HEAD_LABEL" "$N_CONF" "$N_MODELS"
 } > "$REPORT"
 
 printf '\n### Round 1 — independent derivation\n' >> "$REPORT"
 verdict_table_md "$OUT_DIR/round1.jsonl"
 printf '\n### Round 2 — adversarial refutation\n' >> "$REPORT"
 verdict_table_md "$OUT_DIR/round2.jsonl"
+if [ "$RAN_ROUND3" -eq 1 ]; then
+  printf '\n### Round 3 — resolving disagreement\n' >> "$REPORT"
+  verdict_table_md "$OUT_DIR/round3.jsonl"
+fi
 
 # --- Python ground-truth (numeric mode only) -------------------------------
 # One model writes a Python snippet; PYTHON (not the LLM) computes the number,

@@ -16,7 +16,7 @@ DEFAULT_MODELS=(
   "openai/gpt-5.5"
   "google/gemini-3.1-pro-preview"
   "x-ai/grok-4.3"
-  "deepseek/deepseek-v4-pro"
+  ${VPF_EXTRA_MODELS:-"deepseek/deepseek-v4-pro"}
 )
 
 if [ "$#" -gt 0 ]; then
