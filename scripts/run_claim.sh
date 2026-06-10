@@ -115,9 +115,6 @@ verdict_table_md() {  # verdict_table_md <jsonl-file>
     fi
     v="$(printf '%s' "$line" | verdict_of)"
     r="$(printf '%s' "$line" | reason_of | tr '\n' ' ' | sed 's/|/\\|/g' | cut -c1-160)"
-    # show the self-consistency sample tally if present (e.g. "2/3")
-    smp="$(printf '%s' "$line" | jq -r '.samples // ""' 2>/dev/null)"
-    [ -n "$smp" ] && v="$v ($smp)"
     printf '| %s | %s | %s |\n' "$m" "$v" "$r" >> "$REPORT"
   done < "$1"
 }
@@ -131,50 +128,6 @@ count_verdict() {  # count_verdict <jsonl-file> <word>
     case "$v" in *"$(printf '%s' "$2" | tr 'A-Z' 'a-z')"*) n=$((n+1)) ;; esac
   done < "$1"
   printf '%s' "$n"
-}
-
-# Consolidate N sample rounds (one jsonl per sample) into a single jsonl with one
-# line per model: the majority verdict across that model's N runs, the content of
-# a representative majority run, and a "samples":"2/3" annotation. A tie picks
-# UNSURE (the safe verdict). Used for self-consistency (N_SAMPLES>1).
-consolidate_samples() {  # consolidate_samples <out-file> <sample1.jsonl> [sample2.jsonl ...]
-  local out="$1"; shift
-  python3 -I -S - "$out" "$@" <<'PY'
-import sys, json, re
-out_path, files = sys.argv[1], sys.argv[2:]
-def verdict(text):
-    if not text: return "NO-VERDICT"
-    lines = [l for l in text.splitlines() if re.search(r'VERDICT', l, re.I)]
-    if not lines: return "NO-VERDICT"
-    m = re.search(r'VERDICT:\s*<?\*?([A-Za-z]+)', lines[-1], re.I)
-    return m.group(1).upper() if m else "NO-VERDICT"
-runs = {}   # model -> list of (verdict, full_line_obj)
-for f in files:
-    try:
-        for line in open(f):
-            line = line.strip()
-            if not line: continue
-            o = json.loads(line)
-            m = o.get("requested")
-            if not m: continue
-            runs.setdefault(m, []).append((verdict(o.get("content","")), o))
-    except FileNotFoundError:
-        pass
-with open(out_path, "w") as w:
-    for m, lst in runs.items():
-        verds = [v for v,_ in lst]
-        # majority vote
-        counts = {}
-        for v in verds: counts[v] = counts.get(v,0)+1
-        top = max(counts.values())
-        winners = [v for v,c in counts.items() if c == top]
-        chosen = "UNSURE" if len(winners) > 1 else winners[0]
-        # representative object: first run whose verdict == chosen, else first run
-        rep = next((o for v,o in lst if v == chosen), lst[0][1])
-        rep = dict(rep)
-        rep["samples"] = f"{counts.get(chosen,0)}/{len(lst)}"
-        w.write(json.dumps(rep) + "\n")
-PY
 }
 
 # extract the first ```python ... ``` fenced block from a model answer
@@ -198,28 +151,14 @@ printf '%s\n' "$CONTEXT_TXT"  > "$OUT_DIR/_context.txt"
 [ -n "$NUMBERS_TXT" ] && printf '%s\n' "$NUMBERS_TXT" > "$OUT_DIR/_numbers.txt"
 
 # --- Round 1: independent derivation ----------------------------------------
-# Self-consistency: with N_SAMPLES>1, each model derives the quantity N times at
-# a higher temperature; the per-model verdict is the MAJORITY across its N runs.
-# This catches a model's occasional one-off slip. Default 1 = old behaviour.
+# Each model derives the quantity exactly once. Self-consistency sampling is
+# intentionally disabled: one derivation per model keeps the run deterministic
+# in cost and avoids the majority-vote consolidation entirely.
 fill "$SKILL_ROOT/prompts/derive.md" CLAIM   "$OUT_DIR/_claim.txt"   "$OUT_DIR/_r1.tmp"
 fill "$OUT_DIR/_r1.tmp"              CONTEXT "$OUT_DIR/_context.txt" "$OUT_DIR/_r1.prompt"
 
-N_SAMPLES="${N_SAMPLES:-1}"
-if [ "$N_SAMPLES" -le 1 ]; then
-  echo ">> Round 1 (independent derivation) ..." >&2
-  bash "$HERE/fan_out.sh" "$OUT_DIR/_r1.prompt" > "$OUT_DIR/round1.jsonl"
-else
-  echo ">> Round 1 (self-consistency: $N_SAMPLES samples @ temp ${OR_TEMP:-0.5}) ..." >&2
-  sample_files=()
-  s=1
-  while [ "$s" -le "$N_SAMPLES" ]; do
-    OR_TEMP="${OR_TEMP:-0.5}" bash "$HERE/fan_out.sh" "$OUT_DIR/_r1.prompt" \
-      > "$OUT_DIR/round1.sample$s.jsonl"
-    sample_files+=("$OUT_DIR/round1.sample$s.jsonl")
-    s=$((s+1))
-  done
-  consolidate_samples "$OUT_DIR/round1.jsonl" "${sample_files[@]}"
-fi
+echo ">> Round 1 (independent derivation) ..." >&2
+bash "$HERE/fan_out.sh" "$OUT_DIR/_r1.prompt" > "$OUT_DIR/round1.jsonl"
 
 # --- digest of Round-1 derivations -----------------------------------------
 # Each derivation is kept up to OR_DIGEST_CHARS (default 4000) chars. The old

@@ -40,8 +40,7 @@ fi
 # max_tokens defaults to 8192 (long physics derivations were truncated at 4096,
 # cutting off the final VERDICT line). Override via OR_MAX_TOKENS.
 MAX_TOKENS="${OR_MAX_TOKENS:-8192}"
-# Default temperature 0.2 (verification, not ideation). Raised by the caller for
-# self-consistency sampling, where some variance between runs is the whole point.
+# Default temperature 0.2 (verification, not ideation). Override via OR_TEMP.
 TEMP="${OR_TEMP:-0.2}"
 
 # Per-call wall-clock cap (seconds). The empty-content retry uses a SHORTER cap

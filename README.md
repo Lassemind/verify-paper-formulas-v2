@@ -64,12 +64,8 @@ CLAIM_ID=B1 CLAIM_TITLE="Ideal solenoid L" \
 "$SKILL/scripts/run_batch.sh" ./claims
 ```
 
-For high-confidence runs (3× self-consistency sampling, auto Round 3, Python
-ground-truth on numeric claims):
-
-```Shell
-N_SAMPLES=3 "$SKILL/scripts/run_batch.sh" ./claims
-```
+Every model derives each quantity exactly once; auto Round 3 fires on a split,
+and a Python ground-truth runs on any claim with a `=== NUMBERS ===` section.
 
 ### Requirements
 
@@ -136,7 +132,7 @@ diamonds are the two decision points (agree? / has numbers?).
 flowchart TD
     A["📄 One claim file<br/>CLAIM · CONTEXT · NUMBERS?"] --> R1
 
-    R1["<b>Round 1 — derive alone</b><br/>All 5 models work out the formula<br/>blind: no paper answer, no peeking.<br/><i>N_SAMPLES&gt;1 → each runs N×, takes its own majority</i>"]
+    R1["<b>Round 1 — derive alone</b><br/>All 5 models work out the formula<br/>blind: no paper answer, no peeking.<br/><i>each model derives once</i>"]
     R1 --> R2["<b>Round 2 — try to break it</b><br/>Each model now sees the paper's<br/>derivation + everyone else's, and<br/>hunts for the first step that fails."]
 
     R2 --> Q{"Do they<br/>all agree?"}
@@ -195,7 +191,6 @@ that first. Failing that it auto-detects (`PAPER_TEX` override → `.paper_path`
   derivation, so a formula that survives has been attacked from five directions.
 * **Round 3** only fires on genuine disagreement and forces the models to argue
   the single contested step rather than talk past each other.
-* **Self-consistency** (`N_SAMPLES`) averages out a model's one-off slips.
 * **Python ground-truth** removes the weakest link in LLM verification — numeric
   arithmetic — by computing the number for real.
 
@@ -247,11 +242,10 @@ All optional — defaults keep it fast and cheap.
 
 | Var                  | Default           | Effect                                                                                                                              |
 | -------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `N_SAMPLES`          | `1`               | Self-consistency: derive each quantity N× in Round 1 (temp 0.5); per-model verdict = majority. `3` is a good high-confidence value. |
 | `MAX_PARALLEL`       | `5`               | `run_batch.sh`: claims run at once (× 5 models = concurrent calls).                                                                 |
 | `OR_DIGEST_CHARS`    | `4000`            | Max chars of each Round-1 derivation carried into Round 2.                                                                          |
 | `OR_MAX_TOKENS`      | `8192`            | Per-call completion cap.                                                                                                            |
-| `OR_TEMP`            | `0.2`             | Sampling temperature (auto-raised to 0.5 during `N_SAMPLES` runs).                                                                  |
+| `OR_TEMP`            | `0.2`             | Sampling temperature.                                                                                                              |
 | `OR_TIMEOUT`         | `240`             | Per-call wall-clock cap (seconds).                                                                                                  |
 | `OR_RETRY_TIMEOUT`   | `OR_TIMEOUT/2`    | Shorter cap for the empty-content retry, so a stalled reasoning model doesn't burn a second full timeout.                           |
 | `VPF_MODELS`         | *(unset)*         | Comma/space-separated model set overriding the 5-model default without editing `fan_out.sh`. Drop a slow/empty model for one run.   |
@@ -260,9 +254,9 @@ All optional — defaults keep it fast and cheap.
 | `SYNTH_MODEL`        | `claude-opus-4.8` | Model that writes the final human-readable review.                                                                                  |
 | `SYNTH_MAX_TOKENS`   | `16384`           | Completion cap for the synthesis pass (the review is long).                                                                         |
 
-> **Note:** `MAX_PARALLEL` and `N_SAMPLES` multiply the *concurrency*.
-> `MAX_PARALLEL=5 N_SAMPLES=3` ≈ 75 in-flight calls. If you push both, drop
-> `MAX_PARALLEL` to 2 to stay under provider rate limits.
+> **Note:** `MAX_PARALLEL` drives the *concurrency*: `MAX_PARALLEL=5` ≈ 25
+> in-flight calls (5 claims × 5 models). Drop it to 2 to stay under provider
+> rate limits.
 
 ### Cost
 
@@ -271,7 +265,7 @@ calls-per-claim × the panel's price**. Per claim, with the default 5-model pane
 
 | Step              | Calls                                           |
 | ----------------- | ----------------------------------------------- |
-| Round 1 (derive)  | 5 (× `N_SAMPLES`)                               |
+| Round 1 (derive)  | 5                                               |
 | Round 2 (refute)  | 5                                               |
 | Round 3 (resolve) | 5 — *only on a genuine split*                   |
 | Numeric (Python)  | 1 — *only if the claim has* *`=== NUMBERS ===`* |
@@ -291,9 +285,8 @@ DeepSeek, so they dominate the bill. One full fan-out (all 5 models, \~4k in /
 | `grok-4.3`        | 1.25 · 2.5         | 0.011     |
 | `deepseek-v4-pro` | 0.44 · 0.87        | 0.004     |
 
-**Rule of thumb: \~\$0.50–0.70 per claim** at defaults, **\~\$1.20 per claim** with
-`N_SAMPLES=3`. A \~17-claim paper lands around **\$8–10** (default) or **\$18–22**
-(`N_SAMPLES=3`). Dropping the two priciest models (`VPF_MODELS="google/gemini-3.1-pro-preview,x-ai/grok-4.3,deepseek/deepseek-v4-pro"`)
+**Rule of thumb: \~\$0.50–0.70 per claim** at defaults. A \~17-claim paper lands
+around **\$8–10**. Dropping the two priciest models (`VPF_MODELS="google/gemini-3.1-pro-preview,x-ai/grok-4.3,deepseek/deepseek-v4-pro"`)
 cuts a default run to **\~\$2–3** — at the cost of less vendor diversity in the
 panel. (Prices are OpenRouter list rates and drift; treat these as ballpark.)
 

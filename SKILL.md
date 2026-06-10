@@ -162,11 +162,10 @@ All optional; defaults keep the cheap, fast behaviour.
 
 | Var | Default | Effect |
 |-----|---------|--------|
-| `N_SAMPLES` | `1` | Self-consistency: derive each quantity N times (temp 0.5) in Round 1; per-model verdict = majority of N. Catches one-off slips. 3 is a good value. |
 | `MAX_PARALLEL` | `5` | `run_batch.sh`: claims run at once (×5 models = concurrent calls). |
 | `OR_DIGEST_CHARS` | `4000` | Max chars of each Round-1 derivation passed into Round 2. |
 | `OR_MAX_TOKENS` | `8192` | Per-call completion cap. |
-| `OR_TEMP` | `0.2` | Sampling temperature (raised to 0.5 automatically during `N_SAMPLES` runs). |
+| `OR_TEMP` | `0.2` | Sampling temperature. |
 | `OR_TIMEOUT` | `240` | Per-call wall-clock cap (seconds). |
 | `OR_RETRY_TIMEOUT` | `OR_TIMEOUT/2` | Shorter cap for the empty-content retry, so a stalled reasoning model doesn't burn a second full timeout. |
 | `VPF_MODELS` | _(unset)_ | Comma/space-separated model set, overriding the 5-model default without editing `fan_out.sh`. Drop a slow/empty model for a whole run by leaving it out. |
@@ -176,17 +175,15 @@ All optional; defaults keep the cheap, fast behaviour.
 | `SYNTH_MAX_TOKENS` | `16384` | Completion cap for the synthesis pass (the review is long). |
 
 ```
-# fast default
+# default run (Round 3 auto on splits, Python on NUMBERS)
 run_batch.sh ~/claims
-# high-confidence: 3-sample self-consistency, Round 3 auto on splits, Python on NUMBERS
-N_SAMPLES=3 run_batch.sh ~/claims
 # drop a slow/empty model (e.g. deepseek) for the whole run — no file edits
 VPF_MODELS="anthropic/claude-opus-4.8,openai/gpt-5.5,google/gemini-3.1-pro-preview,x-ai/grok-4.3" run_batch.sh ~/claims
 ```
 
 ## Notes
 
-Default temperature is 0.2 (verification, not ideation); self-consistency runs use
-0.5 so the samples actually differ. For long derivations, split into smaller claims
+Default temperature is 0.2 (verification, not ideation). Each model derives every
+quantity exactly once. For long derivations, split into smaller claims
 so each fits comfortably in one prompt and the verdicts stay checkable. In numeric
 mode, trust the **Python-computed** number over any model's mental arithmetic.
