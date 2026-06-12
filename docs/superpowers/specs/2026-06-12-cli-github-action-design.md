@@ -55,10 +55,11 @@ Einzelverdicts werden unschärfer) und Single-Model-Betrieb.
 ### CLI-Interface
 
 ```
-verify-paper <quelle> [--appendix A,B,…] [--quick | --full] [--out DIR]
+verify-paper <quelle> [--appendix A,B,…] [--quick | --full] [--out DIR] [--dry-run]
   --quick   nur Round 1, kein refute, kein Python-Numerikcheck (~1–2 €)
   (default) Round 2 konditional bei Dissens, Numerik wo NUMBERS vorhanden (~3–5 €)
   --full    Round 2 immer, Round 3 bei Split, volle Numerik (~5–6 €)
+  --dry-run geplante Claims/Calls anzeigen, keine API-Kosten
 ```
 
 Voraussetzungen nur: `git`, `curl`, `jq`, `python3`, `OPENROUTER_API_KEY`
@@ -101,6 +102,7 @@ Overleaf-Paper ~1–2 € statt ~10 €. `--no-cache` erzwingt Neuprüfung.
 | Datei | Änderung |
 |---|---|
 | `scripts/fan_out.sh` | Default-Modellset → 3er-Panel |
+| `scripts/or_query.sh` | `OR_MOCK_DIR`-Modus: Dosen-Antworten statt API (für Tests) |
 | `scripts/run_claim.sh` | Round 2 konditional (Skip bei einstimmigem Round 1, außer `VPF_FULL=1`) |
 | `scripts/run_batch.sh` | Cache-Lookup/Write um `run_claim.sh` herum |
 | `scripts/synthesize_report.sh` | `SYNTH_MODEL` → Fable; Section-Befunde einmischen; HTML-Export |
@@ -118,10 +120,29 @@ Reports, Logs oder Artifacts.
 
 ## Tests
 
-- Fixture-Appendix (Mini-`.tex` mit 2 Claims, davon 1 mit NUMBERS) im Repo;
-  `tests/run.sh` prüft: Extraktion → Claim-Dateien → Batch → Report entsteht,
-  Cache-Hit beim zweiten Lauf, `--quick` macht keine Round-2-Calls.
-- Action-Smoke-Test: Workflow gegen das Fixture statt Overleaf (kein Token nötig).
+Zwei getrennte Fragen, zwei getrennte Testarten — Plumbing und Detektionsqualität
+nicht in einem teuren E2E-Test vermischen:
+
+1. **Mock-Layer (Plumbing, 0 €, CI bei jedem Push).** `or_query.sh` bekommt einen
+   `OR_MOCK_DIR`-Modus: statt OpenRouter werden aufgezeichnete JSON-Antworten
+   ausgeliefert. `tests/run.sh` prüft damit offline und deterministisch:
+   Extraktion → Claim-Dateien (Fixture-Appendix mit 2 Claims, 1× NUMBERS),
+   Eskalationslogik (Dissens-Mock → Round 2 feuert, Konsens-Mock → nicht),
+   Cache-Hit beim zweiten Lauf, `--quick` macht keine Round-2-Calls,
+   JSON-Retry bei kaputter Extraktionsantwort, Report-Assembly.
+2. **Seeded-Error-Benchmark (Detektionsqualität, ~1–2 €, manuell/`tests/benchmark.sh`).**
+   Appendix-Kopie mit absichtlich injizierten Fehlern (Vorzeichen, Faktor 2,
+   falscher Exponent) plus Lehrbuch-Claims mit bekannter Wahrheit. Erwartung:
+   injizierte Fehler 🔴, korrekte 🟢. Misst die Erkennungsrate des Tools selbst.
+3. **Overleaf-Historie als natürlicher Testsatz (einmaliges Validierungs-Experiment).**
+   Alte Commits des Papers enthalten echte, später gefixte Fehler. Tool auf einen
+   alten Stand laufen lassen → findet es die später korrigierten Stellen? Echte
+   Fehler statt künstlicher; zugleich Beleg fürs Tool gegenüber Dieter.
+4. **`--dry-run`-Flag:** zeigt geplante Calls/Claims ohne API-Kosten; testet
+   CLI-Parsing und Extraktionsplan gratis.
+
+Action-Smoke-Test läuft gegen den Mock-Layer statt echte API (kein Key, kein
+Token nötig).
 
 ## Offene Punkte
 
