@@ -60,6 +60,29 @@ geprüft). Danach liegt im Ordner `review-ergebnis`:
 Befehl noch einmal ausführen — fertige Ergebnisse werden übersprungen, nur die
 Lücken werden nachgeholt.
 
+## Ablauf auf einen Blick
+
+```mermaid
+flowchart TD
+    A["main.tex"] --> B["Zerlegen an \section-Grenzen<br/>(Haupttext + Anhänge)"]
+    B --> C1["Abschnitt 1"]
+    B --> C2["Abschnitt 2"]
+    B --> C3["… Abschnitt N"]
+    C1 --> D1["Claude Fable 5<br/>prüft unabhängig"]
+    C1 --> D2["GPT-5.5<br/>prüft unabhängig"]
+    C2 --> D1
+    C2 --> D2
+    C3 --> D1
+    C3 --> D2
+    A --> E["Ganzes Paper:<br/>Konsistenz-Check<br/>(Haupttext ↔ Anhang, Notation, Zahlenwerte)"]
+    D1 --> F["Roh-Befunde<br/>(findings.md)"]
+    D2 --> F
+    E --> F
+    F --> G["Fable 5: jeden Befund am LaTeX nachprüfen,<br/>Fehlalarme raus, Doppeltes zusammenfassen"]
+    A --> G
+    G --> H["improvement-report.md<br/>🔴 Fehler · 🟡 Prüfen · 🟢 Kleinere Verbesserungen<br/>je mit main.tex:Zeile + Korrekturvorschlag"]
+```
+
 ## Wie es intern funktioniert (1 Absatz)
 
 Das Paper wird an den `\section`-Grenzen zerlegt. Jeden Abschnitt prüfen
