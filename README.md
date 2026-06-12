@@ -25,21 +25,24 @@ nach Wichtigkeit, mit Zeilennummer und konkretem Korrekturvorschlag.
    da; unter Linux ggf. `sudo apt install jq`).
 3. Das Paper als `.tex`-Datei (lokal oder als Overleaf-Git-Clone).
 
-## Einrichten (einmalig)
+## Einrichten (einmalig, 2 Befehle)
 
 ```bash
-# 1. Dieses Repo holen
 git clone https://github.com/Lassemind/verify-paper-formulas-v2.git
-cd verify-paper-formulas-v2
-
-# 2. Schlüssel eintragen
-cp .env.example .env
-# .env öffnen und den OpenRouter-Schlüssel einsetzen:
-# OPENROUTER_API_KEY=sk-or-...
+verify-paper-formulas-v2/scripts/setup.sh
 ```
 
-Der Schlüssel bleibt in der `.env` auf dem eigenen Rechner — er wird nie
-committed, nie in Reports oder Logs geschrieben.
+Das Setup prüft die Voraussetzungen, fragt **einmal** nach deinem eigenen
+OpenRouter-Schlüssel (Eingabe unsichtbar) und speichert ihn nur für dich lesbar
+unter `~/.config/openrouter.env`. Der Schlüssel wird nie committed, nie in
+Reports oder Logs geschrieben. Wer [Claude Code](https://claude.com/claude-code)
+hat, bekommt automatisch dazu:
+
+* den **Skill** (verlinkt nach `~/.claude/skills/`) — im Chat reicht dann
+  „prüf das Paper unter /pfad/main.tex"
+* den **Slash-Command** `/verify-paper <pfad/zu/main.tex>` — Claude startet den
+  Lauf im Hintergrund, meldet sich mit dem fertigen Report, und fragt beim
+  allerersten Mal selbst nach dem Schlüssel, falls noch keiner da ist
 
 ## Benutzen
 

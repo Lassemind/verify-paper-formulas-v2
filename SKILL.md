@@ -21,7 +21,11 @@ improvement report** for the author. **The paper is never modified.**
 ## Prerequisites
 
 * `OPENROUTER_API_KEY` via env var, `.env` in the skill folder, or
-  `~/.config/openrouter.env` — never print or commit it
+  `~/.config/openrouter.env` — never print or commit it.
+  **First-run onboarding:** if no key is found, don't fail — ask the user for
+  their own OpenRouter key (openrouter.ai/keys), write it to
+  `~/.config/openrouter.env` as `OPENROUTER_API_KEY=...` with mode 600, and
+  continue. Never echo the key back or write it anywhere else.
 * `git`, `curl`, `jq`
 * Default panel: `anthropic/claude-fable-5` + `openai/gpt-5.5`
   (synthesis: Fable 5)
