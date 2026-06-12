@@ -128,7 +128,7 @@ SPROMPT="$OUT/prompts/synthesize.prompt"
   cat "$FINDINGS"
 } > "$SPROMPT"
 REPORT="$OUT/improvement-report.md"
-OR_MAX_TOKENS="${SYNTH_MAX_TOKENS:-30000}" OR_TIMEOUT=900 \
+OR_MAX_TOKENS="${SYNTH_MAX_TOKENS:-30000}" OR_TIMEOUT="${SYNTH_TIMEOUT:-1800}" \
   "$HERE/or_query.sh" "$SYNTH_MODEL" "$SPROMPT" > "$OUT/synthesis.json"
 if [ "$(jq -r '.ok' "$OUT/synthesis.json")" = "true" ]; then
   jq -r '.content' "$OUT/synthesis.json" > "$REPORT"
